@@ -5,11 +5,6 @@ import logging as log
 
 log.basicConfig(level=log.DEBUG)
 
-# Define URL
-# https://www.civilservicejobs.service.gov.uk/csr/index.cgi?SID=cGFnZWFjdGlvbj1zZWFyY2hjb250ZXh0JmNvbnRleHRpZD0zNTczOTI2MSZvd25lcnR5cGU9ZmFpciZvd25lcj01MDcwMDAwJnBhZ2VjbGFzcz1TZWFyY2gmcmVxc2lnPTE2ODQxOTIwMDktNWUwMTVhMGU3MDgxZDNjYjk4MmI5NmYwZjQ3NjIzOTk4ODU0ZDUyZg==
-# https://www.civilservicejobs.service.gov.uk/csr/index.cgi?SID=b3duZXJ0eXBlPWZhaXImY29udGV4dGlkPTM1NzM5NDI5JnBhZ2VhY3Rpb249c2VhcmNoY29udGV4dCZvd25lcj01MDcwMDAwJnBhZ2VjbGFzcz1TZWFyY2gmcmVxc2lnPTE2ODQxOTIzNDEtMjgxYTM2OTI3YWJmMmM4OTY1ODZlYmRlN2MxMDc2MDQ5ODBhMTU2MQ==
-
-
 BASE_URL = 'https://www.civilservicejobs.service.gov.uk'
 
 session = requests.Session()
@@ -43,27 +38,34 @@ else:
 
     
 page = BeautifulSoup(response.text, 'html.parser')
-print("Looking for forms")
+log.debug("Looking for the search form")
 forms = page.find_all('form', method='post')
+search_form = None 
+
 for form in forms:
-    print(form['action'])
+    if 'esearch.cgi' in form['action']:
+        search_form = form
+        break 
+    
+if search_form == None:
+    log.error('The search form was not found on the page. Check if the expected action is still to `esearch.cgi`.')
 
-print("DONE")
-# Find all job postings
-#agencies = soup.find_all('div', {'class': 'agencyAdvert'})
+action_url = search_form['action']
+form_data = {}
+for input in search_form.find_all('input'):
+    form_data |= {input.get('name'): input.get('value')}
 
-# Extract information from each job posting
-#for agency in agencies:
-#    agency_link = agency.select_one('h3 > a', href=True)
-#    name = agency_link.text 
-#    url = agency_link['href']
-#    agency_id = re.search(r".*agency_id=(?P<agency_id>\d+)", url)['agency_id']
+form_data['what'] = 'data'
 
-#    print(name)
-#    print(agency_id)
-#    print('-------')
+response = session.post(action_url, form_data)
+if not response.ok: 
+    log.error('Server returned an error!')
+    log.error(response.reason)
 
-    #title = job.find('a', {'class': 'jobTitle'}).text
-    #description = job.find('p', {'class': 'jobDesc'}).text
-    #location = job.find('span', {'class': 'jobLocation'}).text
-    #print(f'Title: {title}\nDescription: {description}\nLocation: {location}\n')
+page = BeautifulSoup(response.text, 'html.parser')
+
+next = page.select_one('a[title="Go to next search results page"]')
+print(next)
+jobs = page.select_one('ul', title='Job list')
+#print(jobs)
+
