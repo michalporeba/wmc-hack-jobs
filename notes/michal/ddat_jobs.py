@@ -1,11 +1,14 @@
+import re
 import sys
 import requests
 from bs4 import BeautifulSoup, element
 import logging as log
+from datetime import datetime 
 
 log.basicConfig(level=log.INFO)
 
 BASE_URL = 'https://www.civilservicejobs.service.gov.uk'
+SALARIES_REGEX = re.compile(r"^.*£(?P<from>\d{1,3},\d{3}).*£?(?P<to>\d{1,3},\d{3})?$")
 
 def reject_nonessential_cookies(session:requests.Session) -> bool:
     response = session.get(BASE_URL)
@@ -61,11 +64,35 @@ def if_error_report_reason_and_quit(response:requests.Response):
         sys.exit()
 
 
-def capture_job(session:requests.Session, job_list_item:element.Tag) -> None:
+def get_datetime_from_description(description:str) -> datetime:
+    pattern = r'^(.*\d+)(st|nd|rd|th)(.*)$'
+    description = re.sub(pattern, r'\1\3', description)
+    description = description.replace('Closes : ', '')
+    return datetime.strptime(description, '%I:%M %p on %A %d %B %Y')
+
+
+def capture_job(session:requests.Session, job_list_item:element.Tag) -> dict:
     job_link = job_list_item.select_one('h3[class="search-results-job-box-title"] > a')
     job_url = job_link['href']
-    job_title = job_link.text
-    print(f'{job_title} -> {job_url[0:(80-len(job_title))]}')
+    
+    job = { 'title': job_link.text }
+    job['reference'] = job_list_item.select_one('div[class="search-results-job-box-refcode"]').text.replace('Reference : ','')
+    job['employer'] = job_list_item.select_one('div[class="search-results-job-box-department"]').text.replace('at ', '')
+    job['locations'] = job_list_item.select_one('div[class="search-results-job-box-location"]').text.strip().split(',')
+    job['salary'] = {}
+    salary_description = job_list_item.select_one('div[class="search-results-job-box-salary"]').text
+    salary = re.match(SALARIES_REGEX, salary_description)
+    if salary and 'from' in salary.groupdict():
+        job['salary']['min'] = int(salary.group('from').replace(',',''))
+        if salary.group('to') is not None:
+            job['salary']['max'] = int(salary.group('to').replace(',','')) 
+        else:
+            job['salary']['max'] = job['salary']['min']
+    
+    closing_date = job_list_item.select_one('div[class="search-results-job-box-closingdate"]').text
+    job['closing_date'] = get_datetime_from_description(closing_date)
+
+    return job
 
 
 def get_job_list_by_keyword(session:requests.Session, keyword:str) -> bool:
@@ -92,7 +119,8 @@ def get_job_list_by_keyword(session:requests.Session, keyword:str) -> bool:
 
         jobs = page.select_one('ul[title="Job list"]')
         for job in jobs.select('li[class="search-results-job-box"]'):
-            capture_job(session, job)
+            data = capture_job(session, job)
+            print(data)
     
         if not next:
             break 
@@ -101,7 +129,7 @@ def get_job_list_by_keyword(session:requests.Session, keyword:str) -> bool:
 
 
 def get_jobs(session:requests.Session) -> bool:
-    job_titles = ['data analyst', 'data engineer']
+    job_titles = ['data analyst'] #, 'data engineer']
     for job_title in job_titles:
         if not get_job_list_by_keyword(session, job_title):
             sys.exit()
