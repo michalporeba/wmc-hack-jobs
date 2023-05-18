@@ -27,3 +27,16 @@ is to collect the publically available job adverts for analysis now and in the f
 Because there is no consistency of how the jobs are advertised
 there is a need to find a way to reliably identify jobs where data analysis is not only 
 part of requirements, but is core to the profession of data analyst.     
+
+
+## Outcomes
+
+The group produced two scrapers (both have potential for improvements). 
+
+* [NHS jobs scraper](scrapers/nhs/)
+* [Civil Service Jobs scraper](scrapers/civilservice/)
+
+We have also explored alternative ways of gather the necessary information
+
+* Through the existing internal processes - the data could be very useful but limited in scope and in its application
+* Through Freedom of Information requests - we found examples of similar requests from the past that resulted in data released by NHS
