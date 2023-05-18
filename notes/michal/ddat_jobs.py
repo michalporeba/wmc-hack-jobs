@@ -1,6 +1,6 @@
 import sys
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, element
 import logging as log
 
 log.basicConfig(level=log.INFO)
@@ -36,7 +36,7 @@ def reject_nonessential_cookies(session:requests.Session) -> bool:
     
 
 
-def get_search_form(session:requests.Session, page:BeautifulSoup):
+def get_search_form(session:requests.Session, page:element.Tag) -> element.Tag:
     log.debug('Looking for the search form in the page')
     for form in page.find_all('form', method='post'):
         if 'esearch.cgi' in form['action']:
@@ -54,11 +54,18 @@ def get_search_form_data_for_keyword(session:requests.Session, form, keyword:str
     return form_data
 
 
-def if_error_report_reason_and_quit(response):
+def if_error_report_reason_and_quit(response:requests.Response):
     if not response.ok: 
         log.error('Server returned an error!')
         log.error(response.reason)
         sys.exit()
+
+
+def capture_job(session:requests.Session, job_list_item:element.Tag) -> None:
+    job_link = job_list_item.select_one('h3[class="search-results-job-box-title"] > a')
+    job_url = job_link['href']
+    job_title = job_link.text
+    print(f'{job_title} -> {job_url[0:(80-len(job_title))]}')
 
 
 def get_job_list_by_keyword(session:requests.Session, keyword:str) -> bool:
@@ -85,10 +92,7 @@ def get_job_list_by_keyword(session:requests.Session, keyword:str) -> bool:
 
         jobs = page.select_one('ul[title="Job list"]')
         for job in jobs.select('li[class="search-results-job-box"]'):
-            job_link = job.select_one('h3[class="search-results-job-box-title"] > a')
-            job_url = job_link['href']
-            job_title = job_link.text
-            print(f'{job_title} -> {job_url[0:(80-len(job_title))]}')
+            capture_job(session, job)
     
         if not next:
             break 
