@@ -1,14 +1,17 @@
-import re
-import sys
-import requests
+import re, requests, sys
 from bs4 import BeautifulSoup, element
 import logging as log
 from datetime import datetime 
+import hashlib
+import json
+
 
 log.basicConfig(level=log.INFO)
 
+
 BASE_URL = 'https://www.civilservicejobs.service.gov.uk'
-SALARIES_REGEX = re.compile(r"^.*£(?P<from>\d{1,3},\d{3}).*£?(?P<to>\d{1,3},\d{3})?$")
+SALARIES_REGEX = re.compile(r"^.*?(?P<from>\d{1,3},\d{3}).*?(?P<to>\d{1,3},\d{3})?$")
+
 
 def reject_nonessential_cookies(session:requests.Session) -> bool:
     response = session.get(BASE_URL)
@@ -38,7 +41,6 @@ def reject_nonessential_cookies(session:requests.Session) -> bool:
         log.warn('Expected a cookie acceptance form, but it was not found. Chec, if the Id is still `update_cookie_preferences_form`.')
     
 
-
 def get_search_form(session:requests.Session, page:element.Tag) -> element.Tag:
     log.debug('Looking for the search form in the page')
     for form in page.find_all('form', method='post'):
@@ -48,7 +50,7 @@ def get_search_form(session:requests.Session, page:element.Tag) -> element.Tag:
     return None
 
 
-def get_search_form_data_for_keyword(session:requests.Session, form, keyword:str):
+def get_search_form_data_for_keyword(session:requests.Session, form, keyword:str) -> dict:
     form_data = {}
     for input in form.find_all('input'):
         form_data |= {input.get('name'): input.get('value')}
@@ -57,7 +59,7 @@ def get_search_form_data_for_keyword(session:requests.Session, form, keyword:str
     return form_data
 
 
-def if_error_report_reason_and_quit(response:requests.Response):
+def if_error_report_reason_and_quit(response:requests.Response) -> None:
     if not response.ok: 
         log.error('Server returned an error!')
         log.error(response.reason)
@@ -68,14 +70,34 @@ def get_datetime_from_description(description:str) -> datetime:
     pattern = r'^(.*\d+)(st|nd|rd|th)(.*)$'
     description = re.sub(pattern, r'\1\3', description)
     description = description.replace('Closes : ', '')
-    return datetime.strptime(description, '%I:%M %p on %A %d %B %Y')
+    return datetime.strptime(description, '%I:%M %p on %A %d %B %Y').isoformat()
 
+
+def capture_job_details(session:requests.Session, url:str) -> dict:
+    response = session.get(url)
+    if_error_report_reason_and_quit(response)
+    page = BeautifulSoup(response.text, 'html.parser')
+
+    data = { 'details': {}}
+    for field in page.select('div[class="vac_display_field"]'):
+        field_title = field.select_one('h3')
+        if not field_title:
+            continue
+
+        field_value = field.select_one('div[class="vac_display_field_value"]')
+        if not field_value:
+            continue 
+
+        clean_value = BeautifulSoup(field_value.text, "lxml").text
+        data['details'][field_title.text.strip()] = clean_value
+    
+    return data
 
 def capture_job(session:requests.Session, job_list_item:element.Tag) -> dict:
     job_link = job_list_item.select_one('h3[class="search-results-job-box-title"] > a')
     job_url = job_link['href']
     
-    job = { 'title': job_link.text }
+    job = { 'role': job_link.text }
     job['reference'] = job_list_item.select_one('div[class="search-results-job-box-refcode"]').text.replace('Reference : ','')
     job['employer'] = job_list_item.select_one('div[class="search-results-job-box-department"]').text.replace('at ', '')
     job['locations'] = job_list_item.select_one('div[class="search-results-job-box-location"]').text.strip().split(',')
@@ -91,6 +113,8 @@ def capture_job(session:requests.Session, job_list_item:element.Tag) -> dict:
     
     closing_date = job_list_item.select_one('div[class="search-results-job-box-closingdate"]').text
     job['closing_date'] = get_datetime_from_description(closing_date)
+
+    job = job | capture_job_details(session, job_url)
 
     return job
 
@@ -120,8 +144,13 @@ def get_job_list_by_keyword(session:requests.Session, keyword:str) -> bool:
         jobs = page.select_one('ul[title="Job list"]')
         for job in jobs.select('li[class="search-results-job-box"]'):
             data = capture_job(session, job)
-            print(data)
-    
+
+            hash = hashlib.md5(json.dumps(data['details'], sort_keys=True).encode('utf-8')).hexdigest()
+            data['hash'] = hash 
+
+            with open(f'data/{hash}.json', 'w') as f:
+                json.dump(data, f, indent=2)
+            
         if not next:
             break 
 
