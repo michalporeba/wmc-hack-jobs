@@ -25,3 +25,12 @@ They are not exactly what we need, but I think they might be close enough to giv
 
 This should give us enough data to train an Machine Learning (ML) model to take a job description, and predict a label - the job description. 
 With a model developed we could run it on all NHS Jobs listings and identify jobs of interest. 
+
+
+## The objectives
+
+Scraping - effective methods to pull a catalogue of jobs  
+Classifying - can we identify jobs to answer the following questions
+    * What's the rate at which analytical jobs are advertised  
+    * Comparison of healthboards and their gaps - job advert  
+    * How can we recruit and analyse on the jobs.  
